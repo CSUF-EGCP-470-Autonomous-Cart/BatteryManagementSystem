@@ -20,7 +20,7 @@
 #define TEMPERATURE_PRECISION 12
 
 //How often the temoerature probes are polled
-const uint8_t TEMPERATURE_PROBE_POLL_FREQ = 10; //Hz
+const uint8_t TEMPERATURE_REFRESH_RATE = 10; //Hz
 
 
 Adafruit_ADS1115 ads1(0x48);
@@ -70,7 +70,8 @@ void loop()
 {
   sensors.requestTemperatures();
 
-  if (millis() - tempStartTime > (1000 / TEMPERATURE_PROBE_POLL_FREQ)) {
+  if (millis() - tempStartTime > (1000 / TEMPERATURE_REFRESH_RATE)) {
+    tempStartTime = millis();
     for (int i = 0; i < TEMP_PROBE_COUNT; i++) {
       Serial.print(temp, 3);
       Serial.print("\t");
