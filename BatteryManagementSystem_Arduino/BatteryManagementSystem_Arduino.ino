@@ -1,11 +1,11 @@
 /*
 
-  Cell 0    Black     {0x28, 0xAA, 0x39, 0xDF, 0x12, 0x13, 0x02, 0x61}
-  Cell 1    White     {0x28, 0xAA, 0xD6, 0xB8, 0x13, 0x13, 0x02, 0x69}
-  Cell 2    Blue      {0x28, 0xDC, 0x6D, 0x45, 0x92, 0x0B, 0x02, 0xC3}
-  Cell 3    Green     {0x28, 0x5B, 0x3D, 0xDD, 0x1B, 0x13, 0x01, 0x50}
-  Cell 4    Red       {0x28, 0xC1, 0x7D, 0x45, 0x92, 0x0B, 0x02, 0xAE}
-  Cell 5    Yellow    {0x28, 0x2C, 0x8E, 0x45, 0x92, 0x0B, 0x02, 0x25}
+  Cell 0    Black     {0x28, 0xAA, 0x39, 0xDF, 0x12, 0x13, 0x02, 0x61}    ads1.0
+  Cell 1    White     {0x28, 0xAA, 0xD6, 0xB8, 0x13, 0x13, 0x02, 0x69}    ads1.1
+  Cell 2    Blue      {0x28, 0xDC, 0x6D, 0x45, 0x92, 0x0B, 0x02, 0xC3}    ads1.2
+  Cell 3    Green     {0x28, 0x5B, 0x3D, 0xDD, 0x1B, 0x13, 0x01, 0x50}    ads1.3
+  Cell 4    Red       {0x28, 0xC1, 0x7D, 0x45, 0x92, 0x0B, 0x02, 0xAE}    ads2.0
+  Cell 5    Yellow    {0x28, 0x2C, 0x8E, 0x45, 0x92, 0x0B, 0x02, 0x25}    ads2.1
 
 */
 #include <Adafruit_ADS1015.h>
@@ -54,11 +54,10 @@ void setup()
 
   sensors.begin();
   sensors.setWaitForConversion(false);  // makes it async
+  sensors.requestTemperatures();
 
-  // set the resolution to 12 bit (Can be 9 to 12 bits .. lower is faster)
-  for (int i = 0; i < TEMP_PROBE_COUNT; i++) {
-    sensors.setResolution(TEMP_PROBE_ADDRESSES[i], TEMPERATURE_PRECISION);
-  }
+  // set the temperature probe precision in number of bits (Can be 9 to 12 bits .. lower is faster)
+  sensors.setResolution(TEMPERATURE_PRECISION);
 
   ads1.begin();
   ads2.begin();
@@ -68,11 +67,15 @@ void setup()
 uint32_t tempStartTime = millis();
 void loop()
 {
-  sensors.requestTemperatures();
+  if (sensors.isConversionComplete() )
+  {
+    sensors.requestTemperatures();
+  }
 
   if (millis() - tempStartTime > (1000 / TEMPERATURE_REFRESH_RATE)) {
     tempStartTime = millis();
     for (int i = 0; i < TEMP_PROBE_COUNT; i++) {
+      double temp = GetTempProbeF(i);
       Serial.print(temp, 3);
       Serial.print("\t");
     }
@@ -89,6 +92,10 @@ void loop()
 
 double GetTempProbeC(uint8_t Index) {
   return sensors.getTempC(TEMP_PROBE_ADDRESSES[Index]);
+}
+
+double GetTempProbeF(uint8_t Index) {
+  return sensors.getTempF(TEMP_PROBE_ADDRESSES[Index]);
 }
 
 double GetCellVoltage(uint8_t Index) {
