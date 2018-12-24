@@ -70,6 +70,7 @@ void setup()
 
   sensors.begin();
   sensors.setWaitForConversion(false);  // makes it async
+  sensors.setCheckForConversion(true);
   sensors.requestTemperatures();
 
   // set the temperature probe precision in number of bits (Can be 9 to 12 bits .. lower is faster)
