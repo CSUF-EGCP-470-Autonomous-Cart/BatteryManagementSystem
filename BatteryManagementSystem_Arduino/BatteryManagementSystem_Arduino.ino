@@ -12,6 +12,8 @@
 #include <Wire.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <SPI.h>
+#include <Ethernet.h>
 
 #define ONE_WIRE_BUS_PIN 2  // Any pin 2 to 12 (not 13) and A0 to A5
 #define CURRENT_SENSOR_PIN 0
@@ -21,7 +23,6 @@
 
 //How often the temoerature probes are polled
 const uint8_t TEMPERATURE_REFRESH_RATE = 10; //Hz
-
 
 Adafruit_ADS1115 ads1(0x48);
 Adafruit_ADS1115 ads2(0x49);
@@ -48,9 +49,24 @@ const double CELL_MULTIPLIERS[] = {
   0.0
 };
 
+struct BMS {
+  double cellVoltage[6];
+  double cellTemp[6];
+  double voltage;
+  double current;
+};
+
+byte mac[] = {
+  0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED
+};
+IPAddress ip(192, 168, 2, 177);
+EthernetServer server(80);
+EthernetClient rosClient;
+
 void setup()
 {
   Serial.begin(115200);
+  Ethernet.begin(mac, ip);
 
   sensors.begin();
   sensors.setWaitForConversion(false);  // makes it async
@@ -62,32 +78,51 @@ void setup()
   ads1.begin();
   ads2.begin();
 
+  server.begin();
+  Serial.print("server is at ");
+  Serial.println(Ethernet.localIP());
+
 }
 
-uint32_t tempStartTime = millis();
 void loop()
 {
+
   if (sensors.isConversionComplete() )
   {
     sensors.requestTemperatures();
   }
 
-  if (millis() - tempStartTime > (1000 / TEMPERATURE_REFRESH_RATE)) {
-    tempStartTime = millis();
-    for (int i = 0; i < TEMP_PROBE_COUNT; i++) {
-      double temp = GetTempProbeF(i);
-      Serial.print(temp, 3);
-      Serial.print("\t");
-    }
-    Serial.print("\n");
+  if (rosClient && !rosClient.connected()) {
+    rosClient.stop();
+    Serial.println("Client disconnected");
   }
-  //  Serial.print(GetCurrentDraw());
-  //  Serial.print("\t");
-  //
-  //  Serial.print(GetCellVoltage(0));
-  //  Serial.print("\t");
-  //
-  //  Serial.println(GetCellVoltage(1));
+
+  EthernetClient client = server.available();
+  if (client && !rosClient) {
+    rosClient = client;
+    Serial.println("New client connected");
+  }
+
+  if (rosClient.connected()) {
+    Serial.println("sending data");
+    BMS bms;
+    bms.voltage = 46.0;
+    bms.current = 0.2;
+
+    for (int i = 0; i < TEMP_PROBE_COUNT; i++) {
+      bms.cellVoltage[i] = 8.0;
+      bms.cellTemp[i] = GetTempProbeC(i);
+    }
+
+    char bmsBuffer[sizeof(BMS)];
+    memcpy(bmsBuffer, &bms, sizeof(bms));
+    rosClient.write(bmsBuffer, sizeof(bmsBuffer));
+
+  }
+
+
+
+  delay(100);
 }
 
 double GetTempProbeC(uint8_t Index) {
