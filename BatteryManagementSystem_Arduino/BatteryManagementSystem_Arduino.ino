@@ -8,15 +8,25 @@
   Cell 5    Yellow    {0x28, 0x2C, 0x8E, 0x45, 0x92, 0x0B, 0x02, 0x25}    ads2.1
 
 */
+//Must be before ros.h is imported
+#define ROSSERIAL_ARDUINO_TCP
+
 #include <Adafruit_ADS1015.h>
 #include <Wire.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
-#include <SPI.h>
-#include <Ethernet.h>
-#include "printf.h"
+#include <ros.h>
+#include <sensor_msgs/BatteryState.h>
+#include <std_msgs/HEader.h>
 
 const uint8_t CELL_COUNT = 6;
+#define CELL_VOLTAGE_NOMINAL 8
+#define CELL_VOLTAGE_CRITICAL 6
+#define CELL_VOLTAGE_OVERCHARGED 10
+#define CELL_CAPACITY 188.75
+#define BANK_VOLTAGE_NOMINAL 48
+#define BANK_VOLTAGE_CRITICAL 44
+#define BANK_VOLTAGE_OVERCHARGED 52
 
 #define ONE_WIRE_BUS_PIN 2  // Any pin 2 to 12 (not 13) and A0 to A5
 #define CURRENT_SENSOR_PIN 0
@@ -25,7 +35,7 @@ const uint8_t CELL_COUNT = 6;
 #define TEMPERATURE_PRECISION 12
 
 //How often the BMS System updates and sends the date to ROS
-const uint8_t BMS_REFRESH_RATE = 1;  //Hz
+const uint8_t RATE = 1;  //Hz
 
 const uint8_t TEMP_PROBE_ADDRESSES[][8] = {
   {0x28, 0xAA, 0x39, 0xDF, 0x12, 0x13, 0x02, 0x61},
@@ -48,20 +58,17 @@ const double CELL_MULTIPLIERS[] = {
   312.111111111
 };
 
-struct BMS {
-  double cellVoltage[6];
-  double cellTemp[6];
-  double voltage;
-  double current;
+byte mac[] = {
+  0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED
 };
+IPAddress ip(192, 168, 3, 21);
+IPAddress server(192 , 168, 3, 11);
+const uint16_t serverPort = 11411;
 
-//byte mac[] = {
-//  0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED
-//};
-//IPAddress ip(192, 168, 2, 177);
-//EthernetServer server(80);
-//EthernetClient rosClient;
-
+ros::NodeHandle nh;
+sensor_msgs::BatteryState bms_msg;
+std_msgs::Header bms_msg_header;
+ros::Publisher bms("bms", &bms_msg);
 
 Adafruit_ADS1115 ads1(0x48);
 Adafruit_ADS1115 ads2(0x49);
@@ -71,10 +78,16 @@ DallasTemperature sensors(&oneWire);
 void setup()
 {
   Serial.begin(115200);
-  printf_begin();
 
+  Ethernet.begin(mac, ip);
+  Serial.print("Client IP: ");
+  Serial.println(Ethernet.localIP());
 
-  //  Ethernet.begin(mac, ip);
+  //wait for ethernet shield to initalize
+  delay(1000);
+  nh.getHardware()->setConnection(server, serverPort);
+  nh.initNode();
+  nh.advertise(bms);
 
   sensors.begin();
   sensors.setWaitForConversion(false);  // makes it async
@@ -89,67 +102,73 @@ void setup()
   ads1.setGain(ADC_GAIN);
   ads2.setGain(ADC_GAIN);
 
-  //  server.begin();
-  //  Serial.print("server is at ");
-  //  Serial.println(Ethernet.localIP());
-
+  bms_msg.header = bms_msg_header;
+  bms_msg_header.seq = 0;
 }
 
 unsigned long prevPollTime =  millis();
 void loop()
 {
-  if (sensors.isConversionComplete() )
-  {
+  //Update temperature sensors
+  if (sensors.isConversionComplete())
     sensors.requestTemperatures();
+
+  //------Update BMS Data------
+  bms_msg_header.seq = bms_msg_header.seq++;
+
+  bms_msg.voltage = GetBankVoltageAtIndex(5);
+  bms_msg.current = 0.0;
+  //bms_msg.charge
+  //bms_msg.capacity
+  //bms_msg.design_capacity
+  //bms_msg.percentage
+  bms_msg.power_supply_status = sensor_msgs::BatteryState::POWER_SUPPLY_STATUS_UNKNOWN;
+  bms_msg.power_supply_health = sensor_msgs::BatteryState::POWER_SUPPLY_HEALTH_UNKNOWN;
+  bms_msg.power_supply_technology = sensor_msgs::BatteryState::POWER_SUPPLY_TECHNOLOGY_UNKNOWN;
+  bms_msg.present = true;
+
+  //TODO bank voltage logic
+
+  bms_msg.cell_voltage_length = CELL_COUNT;
+  float cellVoltages[CELL_COUNT];
+  for (int i = 0; i < CELL_COUNT; i++) {
+    //bms.cellTemp[i] = GetTempProbeC(i);
+    //TODO Cell temp publish
+    //TODO cell temp logic
+
+    cellVoltages[i] = (float)GetCellVoltage(i);
+    //bms_msg.cell_voltage.push_back((float)GetCellVoltage(i));
+    //TODO cell voltage logic
   }
+  bms_msg.cell_voltage = cellVoltages;
+  //------------------------
 
-
-  if ((millis() - prevPollTime) > (1000 / BMS_REFRESH_RATE)) {
+  if ((millis() - prevPollTime) > (1000 / RATE)) {
     prevPollTime = millis();
-
-    BMS bms;
-    bms.voltage = GetBankVoltageAtIndex(5);
-    bms.current = 1.1;
-
-    for (int i = 0; i < CELL_COUNT; i++) {
-      bms.cellVoltage[i] = GetCellVoltage(i);
-      bms.cellTemp[i] = GetTempProbeC(i);
+    if (nh.connected()) {
+      Serial.print("Conneced...");
+      bms.publish(&bms_msg);
+      Serial.println("published!");
+    }
+    else {
+      Serial.println("Not conneced");
     }
 
-
-    Serial.print("BMS: "); Serial.println(millis());
-    Serial.print("Current: "); Serial.println(bms.current);
-    Serial.print("Bank Voltage: "); Serial.println(bms.voltage);
-
-    for (int i = 0; i < CELL_COUNT; i++) {
-      Serial.print("Cell "); Serial.print(i); Serial.print(" Voltage: "); Serial.println(bms.cellVoltage[i], 4);
-    }
-    for (int i = 0; i < CELL_COUNT; i++) {
-      Serial.print("Cell "); Serial.print(i); Serial.print(" Temp: "); Serial.println(bms.cellTemp[i], 4);
-    }
-    Serial.println();
+    //    Serial.print("BMS: "); Serial.println(millis());
+    //    Serial.print("Current: "); Serial.println(bms_msg.current);
+    //    Serial.print("Bank Voltage: "); Serial.println(bms_msg.voltage);
+    //
+    //    for (int i = 0; i < CELL_COUNT; i++) {
+    //      Serial.print("Cell "); Serial.print(i); Serial.print(" Voltage: "); Serial.println(GetCellVoltage(i), 4);//Serial.println(bms.cellVoltage[i], 4);
+    //    }
+    //    for (int i = 0; i < CELL_COUNT; i++) {
+    //      Serial.print("Cell "); Serial.print(i); Serial.print(" Temp: "); Serial.println(GetTempProbeC(i), 4);//Serial.println(bms.cellTemp[i], 4);
+    //    }
+    //    Serial.println();
   }
 
-  //  if (rosClient && !rosClient.connected()) {
-  //    rosClient.stop();
-  //    Serial.println("Client disconnected");
-  //  }
-  //
-  //  EthernetClient client = server.available();
-  //  if (client && !rosClient) {
-  //    rosClient = client;
-  //    Serial.println("New client connected");
-  //  }
-
-  //  if (rosClient.connected()) {
-  //    Serial.println("sending data");
-
-  //
-  //    //char bmsBuffer[sizeof(BMS)];
-  //    //memcpy(bmsBuffer, &bms, sizeof(bms));
-  //    //rosClient.write(bmsBuffer, sizeof(bmsBuffer));
-  //
-  //  }
+  nh.spinOnce();
+  delay(1);
 }
 
 double GetTempProbeC(uint8_t Index) {
@@ -163,32 +182,22 @@ double GetTempProbeF(uint8_t Index) {
 double GetCellVoltage(uint8_t Index) {
   double CellVoltage = 0;
   if (Index == 0) {
-    CellVoltage = GetBankVoltageAtIndex(Index);
+    return GetBankVoltageAtIndex(Index);
   }
   else if (Index > 0 && Index <= 5) {
-    CellVoltage = GetBankVoltageAtIndex(Index) - GetBankVoltageAtIndex(Index - 1);
+    return (GetBankVoltageAtIndex(Index) - GetBankVoltageAtIndex(Index - 1));
   }
-  else {
-    CellVoltage = -1.0;
-  }
-
-  return CellVoltage;
+  return -1;
 }
 
 double GetBankVoltageAtIndex(uint8_t Index) {
-  double BankVoltage = 0;
-
   if (Index >= 0 && Index <= 3) {
-    BankVoltage = (float(ads1.readADC_SingleEnded(Index) + ADC_OFFSET) / ADC_CONVERT) * CELL_MULTIPLIERS[Index];
+    return (float(ads1.readADC_SingleEnded(Index) + ADC_OFFSET) / ADC_CONVERT) * CELL_MULTIPLIERS[Index];
   }
   else if (Index > 3 && Index <= 5) {
-    BankVoltage = (float(ads2.readADC_SingleEnded(Index - 4) + ADC_OFFSET) / ADC_CONVERT) * CELL_MULTIPLIERS[Index];
+    return (float(ads2.readADC_SingleEnded(Index - 4) + ADC_OFFSET) / ADC_CONVERT) * CELL_MULTIPLIERS[Index];
   }
-  else {
-    BankVoltage = -1.0;
-  }
-
-  return BankVoltage;
+  return -1;
 }
 
 double GetCurrentDraw() {
