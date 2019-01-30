@@ -23,7 +23,7 @@ const uint8_t CELL_COUNT = 6;
 #define CELL_VOLTAGE_NOMINAL 8
 #define CELL_VOLTAGE_CRITICAL 6
 #define CELL_VOLTAGE_OVERCHARGED 10
-#define CELL_CAPACITY 188.75
+#define CELL_CAPACITY 188.75  //Ah
 #define BANK_VOLTAGE_NOMINAL 48
 #define BANK_VOLTAGE_CRITICAL 44
 #define BANK_VOLTAGE_OVERCHARGED 52
@@ -113,38 +113,56 @@ void loop()
   if (sensors.isConversionComplete())
     sensors.requestTemperatures();
 
-  //------Update BMS Data------
-  bms_msg_header.seq = bms_msg_header.seq++;
-
-  bms_msg.voltage = GetBankVoltageAtIndex(5);
-  bms_msg.current = 0.0;
-  //bms_msg.charge
-  //bms_msg.capacity
-  //bms_msg.design_capacity
-  //bms_msg.percentage
-  bms_msg.power_supply_status = sensor_msgs::BatteryState::POWER_SUPPLY_STATUS_UNKNOWN;
-  bms_msg.power_supply_health = sensor_msgs::BatteryState::POWER_SUPPLY_HEALTH_UNKNOWN;
-  bms_msg.power_supply_technology = sensor_msgs::BatteryState::POWER_SUPPLY_TECHNOLOGY_UNKNOWN;
-  bms_msg.present = true;
-
-  //TODO bank voltage logic
-
-  bms_msg.cell_voltage_length = CELL_COUNT;
-  float cellVoltages[CELL_COUNT];
-  for (int i = 0; i < CELL_COUNT; i++) {
-    //bms.cellTemp[i] = GetTempProbeC(i);
-    //TODO Cell temp publish
-    //TODO cell temp logic
-
-    cellVoltages[i] = (float)GetCellVoltage(i);
-    //bms_msg.cell_voltage.push_back((float)GetCellVoltage(i));
-    //TODO cell voltage logic
-  }
-  bms_msg.cell_voltage = cellVoltages;
-  //------------------------
 
   if ((millis() - prevPollTime) > (1000 / RATE)) {
-    prevPollTime = millis();
+      prevPollTime = millis();
+
+    //------Update BMS Data------
+
+    bms_msg.voltage = GetBankVoltageAtIndex(5);
+    bms_msg.current = 0.0;
+    //bms_msg.charge
+    //bms_msg.capacity
+    //bms_msg.design_capacity
+    //bms_msg.percentage
+    bms_msg.power_supply_status = sensor_msgs::BatteryState::POWER_SUPPLY_STATUS_UNKNOWN;
+    bms_msg.power_supply_health = sensor_msgs::BatteryState::POWER_SUPPLY_HEALTH_UNKNOWN;
+    bms_msg.power_supply_technology = sensor_msgs::BatteryState::POWER_SUPPLY_TECHNOLOGY_UNKNOWN;
+    bms_msg.present = true;
+
+    //TODO bank voltage logic
+
+    bms_msg.cell_voltage_length = CELL_COUNT;
+    float cellVoltages[CELL_COUNT];
+    for (int i = 0; i < CELL_COUNT; i++) {
+      //bms.cellTemp[i] = GetTempProbeC(i);
+      //TODO Cell temp publish
+      //TODO cell temp logic
+
+      cellVoltages[i] = (float)GetCellVoltage(i);
+      //bms_msg.cell_voltage.push_back((float)GetCellVoltage(i));
+      //TODO cell voltage logic
+    }
+    bms_msg.cell_voltage = cellVoltages;
+    //------------------------
+
+    #ifdef DEBUG
+      Serial.print("BMS: "); Serial.println(millis());
+      Serial.print("Current: "); Serial.println(bms_msg.current);
+      Serial.print("Bank Voltage: "); Serial.println(bms_msg.voltage);
+
+      for (int i = 0; i < CELL_COUNT; i++) {
+        Serial.print("Cell "); Serial.print(i); Serial.print(" Voltage: "); Serial.println(GetCellVoltage(i), 4);//Serial.println(bms.cellVoltage[i], 4);
+      }
+      for (int i = 0; i < CELL_COUNT; i++) {
+        Serial.print("Cell "); Serial.print(i); Serial.print(" Temp: "); Serial.println(GetTempProbeC(i), 4);//Serial.println(bms.cellTemp[i], 4);
+      }
+      Serial.println();
+    #endif
+
+    bms_msg_header.seq = bms_msg_header.seq++;
+    bms_msg.header = bms_msg_header;
+
     if (nh.connected()) {
       Serial.print("Conneced...");
       bms.publish(&bms_msg);
@@ -154,17 +172,6 @@ void loop()
       Serial.println("Not conneced");
     }
 
-    //    Serial.print("BMS: "); Serial.println(millis());
-    //    Serial.print("Current: "); Serial.println(bms_msg.current);
-    //    Serial.print("Bank Voltage: "); Serial.println(bms_msg.voltage);
-    //
-    //    for (int i = 0; i < CELL_COUNT; i++) {
-    //      Serial.print("Cell "); Serial.print(i); Serial.print(" Voltage: "); Serial.println(GetCellVoltage(i), 4);//Serial.println(bms.cellVoltage[i], 4);
-    //    }
-    //    for (int i = 0; i < CELL_COUNT; i++) {
-    //      Serial.print("Cell "); Serial.print(i); Serial.print(" Temp: "); Serial.println(GetTempProbeC(i), 4);//Serial.println(bms.cellTemp[i], 4);
-    //    }
-    //    Serial.println();
   }
 
   nh.spinOnce();
